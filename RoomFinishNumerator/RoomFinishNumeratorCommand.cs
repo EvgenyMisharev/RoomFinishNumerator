@@ -235,13 +235,27 @@ namespace RoomFinishNumerator
                                 foreach (ElementId panelId in CurtainPanelsIdList)
                                 {
                                     Panel panel = null;
-                                    try
+                                    FamilyInstance doorwindows = null;
+                                    panel = doc.GetElement(panelId) as Panel;
+                                    if(panel == null)
                                     {
-                                        panel = doc.GetElement(panelId) as Panel;
-                                    }
-                                    catch
-                                    {
+                                        doorwindows = doc.GetElement(panelId) as FamilyInstance;
+                                        if(doorwindows != null)
+                                        {
+                                            double curtainWallPanelsHeight = 0;
+                                            double curtainWallPanelsWidth = 0;
 
+                                            if (doorwindows.get_Parameter(BuiltInParameter.CURTAIN_WALL_PANELS_HEIGHT) != null)
+                                            {
+                                                curtainWallPanelsHeight = doorwindows.get_Parameter(BuiltInParameter.CURTAIN_WALL_PANELS_HEIGHT).AsDouble();
+                                            }
+                                            if (doorwindows.get_Parameter(BuiltInParameter.CURTAIN_WALL_PANELS_WIDTH) != null)
+                                            {
+                                                curtainWallPanelsWidth = doorwindows.get_Parameter(BuiltInParameter.CURTAIN_WALL_PANELS_WIDTH).AsDouble();
+                                            }
+                                           
+                                            curtainWallArea += curtainWallPanelsHeight * curtainWallPanelsWidth;
+                                        }
                                     }
 
                                     if (panel != null)
