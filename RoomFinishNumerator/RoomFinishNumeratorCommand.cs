@@ -63,20 +63,21 @@ namespace RoomFinishNumerator
                         double windowssInRoomArea = 0;
                         double curtainWallArea = 0;
 
-                        List<FamilyInstance> doorsInRoomList = new FilteredElementCollector(doc)
-                            .OfCategory(BuiltInCategory.OST_Doors)
-                            .OfClass(typeof(FamilyInstance))
-                            .WhereElementIsNotElementType()
-                            .Cast<FamilyInstance>()
+                        List<FamilyInstance> doorsOnRoomLevelList = new FilteredElementCollector(doc)
+                           .OfCategory(BuiltInCategory.OST_Doors)
+                           .OfClass(typeof(FamilyInstance))
+                           .WhereElementIsNotElementType()
+                           .Cast<FamilyInstance>()
+                           .Where(d => d.LevelId == room.LevelId)
+                           .ToList();
+
+
+                        List<FamilyInstance> doorsInRoomList = doorsOnRoomLevelList
                             .Where(d => d.Room != null)
                             .Where(d => d.Room.Id == room.Id)
                             .ToList();
 
-                        List<FamilyInstance> doorsFromRoomList = new FilteredElementCollector(doc)
-                            .OfCategory(BuiltInCategory.OST_Doors)
-                            .OfClass(typeof(FamilyInstance))
-                            .WhereElementIsNotElementType()
-                            .Cast<FamilyInstance>()
+                        List<FamilyInstance> doorsFromRoomList = doorsOnRoomLevelList
                             .Where(d => d.FromRoom != null)
                             .Where(d => d.FromRoom.Id == room.Id)
                             .ToList();
@@ -136,22 +137,22 @@ namespace RoomFinishNumerator
                             doorsInRoomArea += maxWidth * maxWidth;
                         }
 
-                        List<FamilyInstance> windowsInRoomList = new FilteredElementCollector(doc)
+                        List<FamilyInstance> windowsOnRoomLevelList = new FilteredElementCollector(doc)
                             .OfCategory(BuiltInCategory.OST_Windows)
                             .OfClass(typeof(FamilyInstance))
                             .WhereElementIsNotElementType()
                             .Cast<FamilyInstance>()
-                            .Where(d => d.Room != null)
-                            .Where(d => d.Room.Id == room.Id)
+                            .Where(w => w.LevelId == room.LevelId)
                             .ToList();
 
-                        List<FamilyInstance> windowsFromRoomList = new FilteredElementCollector(doc)
-                            .OfCategory(BuiltInCategory.OST_Windows)
-                            .OfClass(typeof(FamilyInstance))
-                            .WhereElementIsNotElementType()
-                            .Cast<FamilyInstance>()
-                            .Where(d => d.FromRoom != null)
-                            .Where(d => d.FromRoom.Id == room.Id)
+                        List<FamilyInstance> windowsInRoomList = windowsOnRoomLevelList
+                            .Where(w => w.Room != null)
+                            .Where(w => w.Room.Id == room.Id)
+                            .ToList();
+
+                        List<FamilyInstance> windowsFromRoomList = windowsOnRoomLevelList
+                            .Where(w => w.FromRoom != null)
+                            .Where(w => w.FromRoom.Id == room.Id)
                             .ToList();
 
                         foreach (FamilyInstance window in windowsFromRoomList)
@@ -209,32 +210,58 @@ namespace RoomFinishNumerator
                             windowssInRoomArea += maxWidth * maxWidth;
                         }
 
-                        //СПОРНАЯ ИДЕЯ С ВИТРАЖАМИ
-                        //SpatialElementBoundaryOptions opt = new SpatialElementBoundaryOptions();
-                        //IList<IList<BoundarySegment>> boundarySegmentsList = room.GetBoundarySegments(opt);
-                        //foreach(IList<BoundarySegment> lbs in boundarySegmentsList)
-                        //{
-                        //    foreach(BoundarySegment bs in lbs)
-                        //    {
-                        //        Element boundaryElement = doc.GetElement(bs.ElementId);
-                        //        Wall boundaryWall = null;
-                        //        try
-                        //        {
-                        //            boundaryWall = boundaryElement as Wall;
-                        //        }
-                        //        catch 
-                        //        { 
+                        Solid roomSolid = null;
+                        GeometryElement geomRoomElement = room.get_Geometry(new Options());
+                        foreach (GeometryObject geomObj in geomRoomElement)
+                        {
+                            roomSolid = geomObj as Solid;
+                            if (roomSolid != null) break;
+                        }
+                        if(roomSolid != null)
+                        {
+                            List<Wall> curtainWallsList = new FilteredElementCollector(doc)
+                                .OfCategory(BuiltInCategory.OST_Walls)
+                                .OfClass(typeof(Wall))
+                                .WhereElementIsNotElementType()
+                                .Cast<Wall>()
+                                .Where(w => w.LevelId == room.LevelId)
+                                .Where(w => w.CurtainGrid != null)
+                                .ToList();
 
-                        //        }
-                        //        if (boundaryWall != null)
-                        //        {
-                        //            if(boundaryWall.CurtainGrid != null)
-                        //            {
-                        //                curtainWallArea += boundaryWall.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED).AsDouble();
-                        //            }
-                        //        }
-                        //    }
-                        //}
+                            SolidCurveIntersectionOptions intersectOptions = new SolidCurveIntersectionOptions();
+                            foreach (Wall wall in curtainWallsList)
+                            {
+                                List<ElementId> CurtainPanelsIdList = wall.CurtainGrid.GetPanelIds().ToList();
+                                foreach (ElementId panelId in CurtainPanelsIdList)
+                                {
+                                    Panel panel = null;
+                                    try
+                                    {
+                                        panel = doc.GetElement(panelId) as Panel;
+                                    }
+                                    catch
+                                    {
+
+                                    }
+
+                                    if (panel != null)
+                                    {
+                                        BoundingBoxXYZ panelBoundingBox = panel.get_BoundingBox(null);
+                                        if (panelBoundingBox == null) continue;
+                                        XYZ panelCenter = (panelBoundingBox.Max + panelBoundingBox.Min) / 2;
+                                        Curve lineA = Line.CreateBound(panelCenter, panelCenter + (600 / 304.8) * panel.FacingOrientation.Normalize()) as Curve;
+                                        Curve lineB = Line.CreateBound(panelCenter, panelCenter + (600 / 304.8) * panel.FacingOrientation.Normalize().Negate()) as Curve;
+
+                                        SolidCurveIntersection intersectionA = roomSolid.IntersectWithCurve(lineA, intersectOptions);
+                                        SolidCurveIntersection intersectionB = roomSolid.IntersectWithCurve(lineB, intersectOptions);
+                                        if(intersectionA.SegmentCount > 0 || intersectionB.SegmentCount > 0)
+                                        {
+                                            curtainWallArea += panel.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED).AsDouble();
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         Guid openingsAreaParamGuid = new Guid("18e3f49d-1315-415f-8359-8f045a7a8938");
                         if (room.get_Parameter(openingsAreaParamGuid) != null)
