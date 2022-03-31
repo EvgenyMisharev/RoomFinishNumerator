@@ -82,7 +82,20 @@ namespace RoomFinishNumerator
                             .Where(d => d.FromRoom.Id == room.Id)
                             .ToList();
 
+                        List<FamilyInstance> doorsToRoomList = doorsOnRoomLevelList
+                            .Where(d => d.ToRoom != null)
+                            .Where(d => d.ToRoom.Id == room.Id)
+                            .ToList();
+
                         foreach (FamilyInstance door in doorsFromRoomList)
+                        {
+                            if (!doorsInRoomList.Contains(door))
+                            {
+                                doorsInRoomList.Add(door);
+                            }
+                        }
+
+                        foreach (FamilyInstance door in doorsToRoomList)
                         {
                             if (!doorsInRoomList.Contains(door))
                             {
@@ -134,7 +147,7 @@ namespace RoomFinishNumerator
                                 maxWidth = caseworkWidth;
                             }
 
-                            doorsInRoomArea += maxWidth * maxWidth;
+                            doorsInRoomArea += maxHeight * maxWidth;
                         }
 
                         List<FamilyInstance> windowsOnRoomLevelList = new FilteredElementCollector(doc)
@@ -155,7 +168,20 @@ namespace RoomFinishNumerator
                             .Where(w => w.FromRoom.Id == room.Id)
                             .ToList();
 
+                        List<FamilyInstance> windowsToRoomList = windowsOnRoomLevelList
+                            .Where(w => w.ToRoom != null)
+                            .Where(w => w.ToRoom.Id == room.Id)
+                            .ToList();
+
                         foreach (FamilyInstance window in windowsFromRoomList)
+                        {
+                            if (!windowsInRoomList.Contains(window))
+                            {
+                                windowsInRoomList.Add(window);
+                            }
+                        }
+
+                        foreach (FamilyInstance window in windowsToRoomList)
                         {
                             if (!windowsInRoomList.Contains(window))
                             {
@@ -207,7 +233,7 @@ namespace RoomFinishNumerator
                                 maxWidth = caseworkWidth;
                             }
 
-                            windowssInRoomArea += maxWidth * maxWidth;
+                            windowssInRoomArea += maxHeight * maxWidth;
                         }
 
                         Solid roomSolid = null;
