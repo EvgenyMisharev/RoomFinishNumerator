@@ -29,7 +29,30 @@ namespace RoomFinishNumerator
             string roomFinishNumberingSelectedName = roomFinishNumeratorWPF.RoomFinishNumberingSelectedName;
             bool considerCeilings = roomFinishNumeratorWPF.ConsiderCeilings;
             bool considerOpenings = roomFinishNumeratorWPF.ConsiderOpenings;
-
+            
+            using (Transaction t = new Transaction(doc))
+            {
+                t.Start("Заполнение нулей в отделке стен снизу");
+                List<Room> roomList = new FilteredElementCollector(doc)
+                        .OfClass(typeof(SpatialElement))
+                        .WhereElementIsNotElementType()
+                        .Where(r => r.GetType() == typeof(Room))
+                        .Cast<Room>()
+                        .Where(r => r.Area > 0)
+                        .OrderBy(r => (doc.GetElement(r.LevelId) as Level).Elevation)
+                        .ToList();
+                foreach(Room room in roomList)
+                {
+                    if(room.LookupParameter("АР_ВысотаОтделкиСтенСнизу") != null)
+                    {
+                        if(room.LookupParameter("АР_ВысотаОтделкиСтенСнизу").AsDouble().Equals(0))
+                        {
+                            room.LookupParameter("АР_ВысотаОтделкиСтенСнизу").Set(0);
+                        }
+                    }
+                }
+                t.Commit();
+            }
 
             using (Transaction t = new Transaction(doc))
             {
@@ -398,22 +421,25 @@ namespace RoomFinishNumerator
                                     .ToList();
 
                                 string roomNumbersByRoom = null;
+                                string roomNamesByRoom = null;
                                 foreach (Room r in roomListForNumbering)
                                 {
                                     if (roomNumbersByRoom == null)
                                     {
                                         roomNumbersByRoom += r.Number;
+                                        roomNamesByRoom += r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
                                     }
                                     else
                                     {
                                         roomNumbersByRoom += ", " + r.Number;
+                                        roomNamesByRoom += ", " + r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
                                     }
                                 }
-
 
                                 foreach (Room r in roomListForNumbering)
                                 {
                                     r.LookupParameter("АР_НомераПомещенийВедОтделки").Set(roomNumbersByRoom);
+                                    r.LookupParameter("АР_ИменаПомещенийВедОтделки").Set(roomNamesByRoom);
                                 }
                             }
                             roomFinishNumeratorProgressBarWPF.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.Close());
@@ -467,22 +493,25 @@ namespace RoomFinishNumerator
                                     .ToList();
 
                                 string roomNumbersByRoom = null;
+                                string roomNamesByRoom = null;
                                 foreach (Room r in roomListForNumbering)
                                 {
                                     if (roomNumbersByRoom == null)
                                     {
                                         roomNumbersByRoom += r.Number;
+                                        roomNamesByRoom += r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
                                     }
                                     else
                                     {
                                         roomNumbersByRoom += ", " + r.Number;
+                                        roomNamesByRoom += ", " + r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
                                     }
                                 }
-
 
                                 foreach (Room r in roomListForNumbering)
                                 {
                                     r.LookupParameter("АР_НомераПомещенийВедОтделки").Set(roomNumbersByRoom);
+                                    r.LookupParameter("АР_ИменаПомещенийВедОтделки").Set(roomNamesByRoom);
                                 }
                             }
                             roomFinishNumeratorProgressBarWPF.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.Close());
@@ -566,22 +595,25 @@ namespace RoomFinishNumerator
                                         .ToList();
 
                                     string roomNumbersByRoom = null;
+                                    string roomNamesByRoom = null;
                                     foreach (Room r in roomListForNumbering)
                                     {
                                         if (roomNumbersByRoom == null)
                                         {
                                             roomNumbersByRoom += r.Number;
+                                            roomNamesByRoom += r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
                                         }
                                         else
                                         {
                                             roomNumbersByRoom += ", " + r.Number;
+                                            roomNamesByRoom += ", " + r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
                                         }
                                     }
-
 
                                     foreach (Room r in roomListForNumbering)
                                     {
                                         r.LookupParameter("АР_НомераПомещенийВедОтделки").Set(roomNumbersByRoom);
+                                        r.LookupParameter("АР_ИменаПомещенийВедОтделки").Set(roomNamesByRoom);
                                     }
                                 }
                             }
@@ -639,22 +671,25 @@ namespace RoomFinishNumerator
                                         .ToList();
 
                                     string roomNumbersByRoom = null;
+                                    string roomNamesByRoom = null;
                                     foreach (Room r in roomListForNumbering)
                                     {
                                         if (roomNumbersByRoom == null)
                                         {
                                             roomNumbersByRoom += r.Number;
+                                            roomNamesByRoom += r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
                                         }
                                         else
                                         {
                                             roomNumbersByRoom += ", " + r.Number;
+                                            roomNamesByRoom += ", " + r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
                                         }
                                     }
-
 
                                     foreach (Room r in roomListForNumbering)
                                     {
                                         r.LookupParameter("АР_НомераПомещенийВедОтделки").Set(roomNumbersByRoom);
+                                        r.LookupParameter("АР_ИменаПомещенийВедОтделки").Set(roomNamesByRoom);
                                     }
                                 }
                             }
