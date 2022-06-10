@@ -421,18 +421,34 @@ namespace RoomFinishNumerator
                                     .ToList();
 
                                 string roomNumbersByRoom = null;
+                                List<string> roomNamesByRoomList = new List<string>();
                                 string roomNamesByRoom = null;
                                 foreach (Room r in roomListForNumbering)
                                 {
                                     if (roomNumbersByRoom == null)
                                     {
                                         roomNumbersByRoom += r.Number;
-                                        roomNamesByRoom += r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
+                                        roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
                                     }
                                     else
                                     {
                                         roomNumbersByRoom += ", " + r.Number;
-                                        roomNamesByRoom += ", " + r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
+                                        roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
+                                    }
+                                }
+
+                                roomNamesByRoomList = roomNamesByRoomList.Distinct().ToList();
+                                roomNamesByRoomList.Sort(new AlphanumComparatorFastString());
+
+                                foreach (string roomName in roomNamesByRoomList)
+                                {
+                                    if (roomNamesByRoom == null)
+                                    {
+                                        roomNamesByRoom += roomName;
+                                    }
+                                    else
+                                    {
+                                        roomNamesByRoom += ", " + roomName;
                                     }
                                 }
 
@@ -493,18 +509,34 @@ namespace RoomFinishNumerator
                                     .ToList();
 
                                 string roomNumbersByRoom = null;
+                                List<string> roomNamesByRoomList = new List<string>();
                                 string roomNamesByRoom = null;
                                 foreach (Room r in roomListForNumbering)
                                 {
                                     if (roomNumbersByRoom == null)
                                     {
                                         roomNumbersByRoom += r.Number;
-                                        roomNamesByRoom += r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
+                                        roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
                                     }
                                     else
                                     {
                                         roomNumbersByRoom += ", " + r.Number;
-                                        roomNamesByRoom += ", " + r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
+                                        roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
+                                    }
+                                }
+
+                                roomNamesByRoomList = roomNamesByRoomList.Distinct().ToList();
+                                roomNamesByRoomList.Sort(new AlphanumComparatorFastString());
+
+                                foreach (string roomName in roomNamesByRoomList)
+                                {
+                                    if (roomNamesByRoom == null)
+                                    {
+                                        roomNamesByRoom += roomName;
+                                    }
+                                    else
+                                    {
+                                        roomNamesByRoom += ", " + roomName;
                                     }
                                 }
 
@@ -595,18 +627,34 @@ namespace RoomFinishNumerator
                                         .ToList();
 
                                     string roomNumbersByRoom = null;
+                                    List<string> roomNamesByRoomList = new List<string>();
                                     string roomNamesByRoom = null;
                                     foreach (Room r in roomListForNumbering)
                                     {
                                         if (roomNumbersByRoom == null)
                                         {
                                             roomNumbersByRoom += r.Number;
-                                            roomNamesByRoom += r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
+                                            roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
                                         }
                                         else
                                         {
                                             roomNumbersByRoom += ", " + r.Number;
-                                            roomNamesByRoom += ", " + r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
+                                            roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
+                                        }
+                                    }
+
+                                    roomNamesByRoomList = roomNamesByRoomList.Distinct().ToList();
+                                    roomNamesByRoomList.Sort(new AlphanumComparatorFastString());
+
+                                    foreach (string roomName in roomNamesByRoomList)
+                                    {
+                                        if (roomNamesByRoom == null)
+                                        {
+                                            roomNamesByRoom += roomName;
+                                        }
+                                        else
+                                        {
+                                            roomNamesByRoom += ", " + roomName;
                                         }
                                     }
 
@@ -671,18 +719,34 @@ namespace RoomFinishNumerator
                                         .ToList();
 
                                     string roomNumbersByRoom = null;
+                                    List<string> roomNamesByRoomList = new List<string>();
                                     string roomNamesByRoom = null;
                                     foreach (Room r in roomListForNumbering)
                                     {
                                         if (roomNumbersByRoom == null)
                                         {
                                             roomNumbersByRoom += r.Number;
-                                            roomNamesByRoom += r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
+                                            roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
                                         }
                                         else
                                         {
                                             roomNumbersByRoom += ", " + r.Number;
-                                            roomNamesByRoom += ", " + r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString();
+                                            roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
+                                        }
+                                    }
+
+                                    roomNamesByRoomList = roomNamesByRoomList.Distinct().ToList();
+                                    roomNamesByRoomList.Sort(new AlphanumComparatorFastString());
+
+                                    foreach (string roomName in roomNamesByRoomList)
+                                    {
+                                        if (roomNamesByRoom == null)
+                                        {
+                                            roomNamesByRoom += roomName;
+                                        }
+                                        else
+                                        {
+                                            roomNamesByRoom += ", " + roomName;
                                         }
                                     }
 
