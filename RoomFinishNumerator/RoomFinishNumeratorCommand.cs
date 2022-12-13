@@ -81,7 +81,10 @@ namespace RoomFinishNumerator
                     {
                         step++;
                         roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Value = step);
+                        if(room.Number == "157")
+                        {
 
+                        }
                         double doorsInRoomArea = 0;
                         double windowssInRoomArea = 0;
                         double curtainWallArea = 0;
@@ -302,8 +305,19 @@ namespace RoomFinishNumerator
                                             {
                                                 curtainWallPanelsWidth = doorwindows.get_Parameter(BuiltInParameter.CURTAIN_WALL_PANELS_WIDTH).AsDouble();
                                             }
-                                           
-                                            curtainWallArea += curtainWallPanelsHeight * curtainWallPanelsWidth;
+
+                                            BoundingBoxXYZ doorwindowsBoundingBox = doorwindows.get_BoundingBox(null);
+                                            if (doorwindowsBoundingBox == null) continue;
+                                            XYZ doorwindowsCenter = (doorwindowsBoundingBox.Max + doorwindowsBoundingBox.Min) / 2;
+                                            Curve lineA = Line.CreateBound(doorwindowsCenter, doorwindowsCenter + (600 / 304.8) * doorwindows.FacingOrientation.Normalize()) as Curve;
+                                            Curve lineB = Line.CreateBound(doorwindowsCenter, doorwindowsCenter + (600 / 304.8) * doorwindows.FacingOrientation.Normalize().Negate()) as Curve;
+
+                                            SolidCurveIntersection intersectionA = roomSolid.IntersectWithCurve(lineA, intersectOptions);
+                                            SolidCurveIntersection intersectionB = roomSolid.IntersectWithCurve(lineB, intersectOptions);
+                                            if (intersectionA.SegmentCount > 0 || intersectionB.SegmentCount > 0)
+                                            {
+                                                curtainWallArea += curtainWallPanelsHeight * curtainWallPanelsWidth;
+                                            }
                                         }
                                     }
 
