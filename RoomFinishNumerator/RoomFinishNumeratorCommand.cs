@@ -81,10 +81,7 @@ namespace RoomFinishNumerator
                     {
                         step++;
                         roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Value = step);
-                        if(room.Number == "157")
-                        {
 
-                        }
                         double doorsInRoomArea = 0;
                         double windowssInRoomArea = 0;
                         double curtainWallArea = 0;
