@@ -3,10 +3,10 @@ using Autodesk.Revit.DB.Architecture;
 using Autodesk.Revit.UI;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using System.Text;
+using System.Reflection;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace RoomFinishNumerator
 {
@@ -17,6 +17,12 @@ namespace RoomFinishNumerator
         RoomFinishNumeratorOpeningsProgressBarWPF roomFinishNumeratorOpeningsProgressBarWPF;
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            try
+            {
+                GetPluginStartInfo();
+            }
+            catch { }
+
             Document doc = commandData.Application.ActiveUIDocument.Document;
 
             RoomFinishNumeratorWPF roomFinishNumeratorWPF = new RoomFinishNumeratorWPF();
@@ -29,7 +35,7 @@ namespace RoomFinishNumerator
             string roomFinishNumberingSelectedName = roomFinishNumeratorWPF.RoomFinishNumberingSelectedName;
             bool considerCeilings = roomFinishNumeratorWPF.ConsiderCeilings;
             bool considerOpenings = roomFinishNumeratorWPF.ConsiderOpenings;
-            
+
             using (Transaction t = new Transaction(doc))
             {
                 t.Start("Заполнение нулей в отделке стен снизу");
@@ -41,11 +47,11 @@ namespace RoomFinishNumerator
                         .Where(r => r.Area > 0)
                         .OrderBy(r => (doc.GetElement(r.LevelId) as Level).Elevation)
                         .ToList();
-                foreach(Room room in roomList)
+                foreach (Room room in roomList)
                 {
-                    if(room.LookupParameter("АР_ВысотаОтделкиСтенСнизу") != null)
+                    if (room.LookupParameter("АР_ВысотаОтделкиСтенСнизу") != null)
                     {
-                        if(room.LookupParameter("АР_ВысотаОтделкиСтенСнизу").AsDouble().Equals(0))
+                        if (room.LookupParameter("АР_ВысотаОтделкиСтенСнизу").AsDouble().Equals(0))
                         {
                             room.LookupParameter("АР_ВысотаОтделкиСтенСнизу").Set(0);
                         }
@@ -266,7 +272,7 @@ namespace RoomFinishNumerator
                             roomSolid = geomObj as Solid;
                             if (roomSolid != null) break;
                         }
-                        if(roomSolid != null)
+                        if (roomSolid != null)
                         {
                             List<Wall> curtainWallsList = new FilteredElementCollector(doc)
                                 .OfCategory(BuiltInCategory.OST_Walls)
@@ -286,10 +292,10 @@ namespace RoomFinishNumerator
                                     Panel panel = null;
                                     FamilyInstance doorwindows = null;
                                     panel = doc.GetElement(panelId) as Panel;
-                                    if(panel == null)
+                                    if (panel == null)
                                     {
                                         doorwindows = doc.GetElement(panelId) as FamilyInstance;
-                                        if(doorwindows != null)
+                                        if (doorwindows != null)
                                         {
                                             double curtainWallPanelsHeight = 0;
                                             double curtainWallPanelsWidth = 0;
@@ -328,7 +334,7 @@ namespace RoomFinishNumerator
 
                                         SolidCurveIntersection intersectionA = roomSolid.IntersectWithCurve(lineA, intersectOptions);
                                         SolidCurveIntersection intersectionB = roomSolid.IntersectWithCurve(lineB, intersectOptions);
-                                        if(intersectionA.SegmentCount > 0 || intersectionB.SegmentCount > 0)
+                                        if (intersectionA.SegmentCount > 0 || intersectionB.SegmentCount > 0)
                                         {
                                             curtainWallArea += panel.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED).AsDouble();
                                         }
@@ -683,7 +689,7 @@ namespace RoomFinishNumerator
                     }
                     else
                     {
-                        using (Transaction t = new Transaction(doc)) 
+                        using (Transaction t = new Transaction(doc))
                         {
                             t.Start("Внесение номеров в помещения");
                             foreach (Level lv in levelList)
@@ -789,6 +795,27 @@ namespace RoomFinishNumerator
             roomFinishNumeratorOpeningsProgressBarWPF = new RoomFinishNumeratorOpeningsProgressBarWPF();
             roomFinishNumeratorOpeningsProgressBarWPF.Show();
             System.Windows.Threading.Dispatcher.Run();
+        }
+        private static void GetPluginStartInfo()
+        {
+            // Получаем сборку, в которой выполняется текущий код
+            Assembly thisAssembly = Assembly.GetExecutingAssembly();
+            string assemblyName = "RoomFinishNumerator";
+            string assemblyNameRus = "Нумератор отделки";
+            string assemblyFolderPath = Path.GetDirectoryName(thisAssembly.Location);
+
+            int lastBackslashIndex = assemblyFolderPath.LastIndexOf("\\");
+            string dllPath = assemblyFolderPath.Substring(0, lastBackslashIndex + 1) + "PluginInfoCollector\\PluginInfoCollector.dll";
+
+            Assembly assembly = Assembly.LoadFrom(dllPath);
+            Type type = assembly.GetType("PluginInfoCollector.InfoCollector");
+            var constructor = type.GetConstructor(new Type[] { typeof(string), typeof(string) });
+
+            if (type != null)
+            {
+                // Создание экземпляра класса
+                object instance = Activator.CreateInstance(type, new object[] { assemblyName, assemblyNameRus });
+            }
         }
     }
 }
