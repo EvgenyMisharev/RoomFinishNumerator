@@ -83,6 +83,13 @@ namespace RoomFinishNumerator
                     roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Minimum = 0);
                     roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Maximum = roomList.Count);
 
+                    Phase phase = null;
+                    PhaseArray phases = doc.Phases;
+                    if (phases.Size != 0)
+                    {
+                        phase = phases.get_Item(phases.Size - 1);
+                    }
+
                     foreach (Room room in roomList)
                     {
                         step++;
@@ -92,13 +99,28 @@ namespace RoomFinishNumerator
                         double windowssInRoomArea = 0;
                         double curtainWallArea = 0;
 
-                        List<FamilyInstance> doorsOnRoomLevelList = new FilteredElementCollector(doc)
-                           .OfCategory(BuiltInCategory.OST_Doors)
-                           .OfClass(typeof(FamilyInstance))
-                           .WhereElementIsNotElementType()
-                           .Cast<FamilyInstance>()
-                           .Where(d => d.LevelId == room.LevelId)
-                           .ToList();
+                        List<FamilyInstance> doorsOnRoomLevelList = new List<FamilyInstance>();
+                        if (phase != null)
+                        {
+                            doorsOnRoomLevelList = new FilteredElementCollector(doc)
+                               .OfCategory(BuiltInCategory.OST_Doors)
+                               .OfClass(typeof(FamilyInstance))
+                               .WhereElementIsNotElementType()
+                               .Cast<FamilyInstance>()
+                               .Where(d => d.LevelId == room.LevelId)
+                               .Where(d => d.GetPhaseStatus(phase.Id) != ElementOnPhaseStatus.Demolished)
+                               .ToList();
+                        }
+                        else
+                        {
+                            doorsOnRoomLevelList = new FilteredElementCollector(doc)
+                               .OfCategory(BuiltInCategory.OST_Doors)
+                               .OfClass(typeof(FamilyInstance))
+                               .WhereElementIsNotElementType()
+                               .Cast<FamilyInstance>()
+                               .Where(d => d.LevelId == room.LevelId)
+                               .ToList();
+                        }
 
 
                         List<FamilyInstance> doorsInRoomList = doorsOnRoomLevelList
@@ -179,13 +201,29 @@ namespace RoomFinishNumerator
                             doorsInRoomArea += maxHeight * maxWidth;
                         }
 
-                        List<FamilyInstance> windowsOnRoomLevelList = new FilteredElementCollector(doc)
-                            .OfCategory(BuiltInCategory.OST_Windows)
-                            .OfClass(typeof(FamilyInstance))
-                            .WhereElementIsNotElementType()
-                            .Cast<FamilyInstance>()
-                            .Where(w => w.LevelId == room.LevelId)
-                            .ToList();
+                        List<FamilyInstance> windowsOnRoomLevelList = new List<FamilyInstance>();
+                        if (phase != null)
+                        {
+                            windowsOnRoomLevelList = new FilteredElementCollector(doc)
+                                .OfCategory(BuiltInCategory.OST_Windows)
+                                .OfClass(typeof(FamilyInstance))
+                                .WhereElementIsNotElementType()
+                                .Cast<FamilyInstance>()
+                                .Where(w => w.LevelId == room.LevelId)
+                                .Where(d => d.GetPhaseStatus(phase.Id) != ElementOnPhaseStatus.Demolished)
+                                .ToList();
+                        }
+                        else
+                        {
+                            windowsOnRoomLevelList = new FilteredElementCollector(doc)
+                                .OfCategory(BuiltInCategory.OST_Windows)
+                                .OfClass(typeof(FamilyInstance))
+                                .WhereElementIsNotElementType()
+                                .Cast<FamilyInstance>()
+                                .Where(w => w.LevelId == room.LevelId)
+                                .ToList();
+                        }
+
 
                         List<FamilyInstance> windowsInRoomList = windowsOnRoomLevelList
                             .Where(w => w.Room != null)
@@ -274,14 +312,30 @@ namespace RoomFinishNumerator
                         }
                         if (roomSolid != null)
                         {
-                            List<Wall> curtainWallsList = new FilteredElementCollector(doc)
-                                .OfCategory(BuiltInCategory.OST_Walls)
-                                .OfClass(typeof(Wall))
-                                .WhereElementIsNotElementType()
-                                .Cast<Wall>()
-                                .Where(w => w.LevelId == room.LevelId)
-                                .Where(w => w.CurtainGrid != null)
-                                .ToList();
+                            List<Wall> curtainWallsList = new List<Wall>();
+                            if (phase != null)
+                            {
+                                curtainWallsList = new FilteredElementCollector(doc)
+                                    .OfCategory(BuiltInCategory.OST_Walls)
+                                    .OfClass(typeof(Wall))
+                                    .WhereElementIsNotElementType()
+                                    .Cast<Wall>()
+                                    .Where(w => w.LevelId == room.LevelId)
+                                    .Where(w => w.CurtainGrid != null)
+                                    .Where(w => w.GetPhaseStatus(phase.Id) != ElementOnPhaseStatus.Demolished)
+                                    .ToList();
+                            }
+                            else
+                            {
+                                curtainWallsList = new FilteredElementCollector(doc)
+                                    .OfCategory(BuiltInCategory.OST_Walls)
+                                    .OfClass(typeof(Wall))
+                                    .WhereElementIsNotElementType()
+                                    .Cast<Wall>()
+                                    .Where(w => w.LevelId == room.LevelId)
+                                    .Where(w => w.CurtainGrid != null)
+                                    .ToList();
+                            }
 
                             SolidCurveIntersectionOptions intersectOptions = new SolidCurveIntersectionOptions();
                             foreach (Wall wall in curtainWallsList)
