@@ -5,15 +5,13 @@ using System.Windows.Input;
 
 namespace RoomFinishNumerator
 {
-    /// <summary>
-    /// Логика взаимодействия для RoomFinishNumeratorWPF.xaml
-    /// </summary>
     public partial class RoomFinishNumeratorWPF : Window
     {
         public string RoomFinishNumberingSelectedName;
 
         public bool ConsiderCeilings;
         public bool ConsiderOpenings;
+        public bool ConsiderBaseboards;
 
         public RoomFinishNumeratorWPF()
         {
@@ -22,12 +20,13 @@ namespace RoomFinishNumerator
 
         private void btn_Ok_Click(object sender, RoutedEventArgs e)
         {
-            RoomFinishNumberingSelectedName = (groupBox_RoomFinishNumbering.Content as System.Windows.Controls.Grid)
+            RoomFinishNumberingSelectedName = (groupBox_RoomFinishNumbering.Content as StackPanel)
                 .Children.OfType<RadioButton>()
                 .FirstOrDefault(rb => rb.IsChecked.Value == true)
                 .Name;
             ConsiderCeilings = checkBox_ConsiderCeilings.IsChecked.Value;
             ConsiderOpenings = checkBox_ConsiderOpenings.IsChecked.Value;
+            ConsiderBaseboards = checkBox_ConsiderBaseboards.IsChecked.Value;
 
             DialogResult = true;
             Close();
@@ -42,12 +41,13 @@ namespace RoomFinishNumerator
         {
             if (e.Key == Key.Enter || e.Key == Key.Space)
             {
-                RoomFinishNumberingSelectedName = (groupBox_RoomFinishNumbering.Content as System.Windows.Controls.Grid)
+                RoomFinishNumberingSelectedName = (groupBox_RoomFinishNumbering.Content as StackPanel)
                     .Children.OfType<RadioButton>()
                     .FirstOrDefault(rb => rb.IsChecked.Value == true)
                     .Name;
                 ConsiderCeilings = checkBox_ConsiderCeilings.IsChecked.Value;
                 ConsiderOpenings = checkBox_ConsiderOpenings.IsChecked.Value;
+                ConsiderBaseboards = checkBox_ConsiderBaseboards.IsChecked.Value;
 
                 DialogResult = true;
                 Close();

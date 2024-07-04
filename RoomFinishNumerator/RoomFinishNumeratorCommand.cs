@@ -15,6 +15,7 @@ namespace RoomFinishNumerator
     {
         RoomFinishNumeratorProgressBarWPF roomFinishNumeratorProgressBarWPF;
         RoomFinishNumeratorOpeningsProgressBarWPF roomFinishNumeratorOpeningsProgressBarWPF;
+
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
             try
@@ -25,850 +26,687 @@ namespace RoomFinishNumerator
 
             Document doc = commandData.Application.ActiveUIDocument.Document;
 
-            RoomFinishNumeratorWPF roomFinishNumeratorWPF = new RoomFinishNumeratorWPF();
+            var roomFinishNumeratorWPF = new RoomFinishNumeratorWPF();
             roomFinishNumeratorWPF.ShowDialog();
             if (roomFinishNumeratorWPF.DialogResult != true)
             {
                 return Result.Cancelled;
             }
 
-            string roomFinishNumberingSelectedName = roomFinishNumeratorWPF.RoomFinishNumberingSelectedName;
-            bool considerCeilings = roomFinishNumeratorWPF.ConsiderCeilings;
-            bool considerOpenings = roomFinishNumeratorWPF.ConsiderOpenings;
+            var roomFinishNumberingSelectedName = roomFinishNumeratorWPF.RoomFinishNumberingSelectedName;
+            var considerCeilings = roomFinishNumeratorWPF.ConsiderCeilings;
+            var considerOpenings = roomFinishNumeratorWPF.ConsiderOpenings;
+            var considerBaseboards = roomFinishNumeratorWPF.ConsiderBaseboards;
 
-            using (Transaction t = new Transaction(doc))
+            if (!CheckRequiredParameters(doc, roomFinishNumberingSelectedName, considerBaseboards, ref message))
             {
-                t.Start("Заполнение нулей в отделке стен снизу");
-                List<Room> roomList = new FilteredElementCollector(doc)
-                        .OfClass(typeof(SpatialElement))
-                        .WhereElementIsNotElementType()
-                        .Where(r => r.GetType() == typeof(Room))
-                        .Cast<Room>()
-                        .Where(r => r.Area > 0)
-                        .OrderBy(r => (doc.GetElement(r.LevelId) as Level).Elevation)
-                        .ToList();
-                foreach (Room room in roomList)
-                {
-                    if (room.LookupParameter("АР_ВысотаОтделкиСтенСнизу") != null)
-                    {
-                        if (room.LookupParameter("АР_ВысотаОтделкиСтенСнизу").AsDouble().Equals(0))
-                        {
-                            room.LookupParameter("АР_ВысотаОтделкиСтенСнизу").Set(0);
-                        }
-                    }
-                }
-                t.Commit();
+                return Result.Failed;
             }
 
-            using (Transaction t = new Transaction(doc))
+            using (TransactionGroup tg = new TransactionGroup(doc))
             {
-                t.Start("Вычисление площадей проемов");
+                tg.Start("Нумерация отделки");
+
+                // Fill zero in wall finish heights
+                FillZeroInWallFinishHeights(doc);
+
+                // Calculate openings areas
                 if (considerOpenings)
                 {
-                    List<Room> roomList = new FilteredElementCollector(doc)
-                        .OfClass(typeof(SpatialElement))
-                        .WhereElementIsNotElementType()
-                        .Where(r => r.GetType() == typeof(Room))
-                        .Cast<Room>()
-                        .Where(r => r.Area > 0)
-                        .OrderBy(r => (doc.GetElement(r.LevelId) as Level).Elevation)
-                        .ToList();
-
-                    Thread newWindowThread = new Thread(new ThreadStart(ThreadStartingPointForOpenings));
-                    newWindowThread.SetApartmentState(ApartmentState.STA);
-                    newWindowThread.IsBackground = true;
-                    newWindowThread.Start();
-                    int step = 0;
-                    Thread.Sleep(100);
-                    roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Minimum = 0);
-                    roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Maximum = roomList.Count);
-
-                    Phase phase = null;
-                    PhaseArray phases = doc.Phases;
-                    if (phases.Size != 0)
-                    {
-                        phase = phases.get_Item(phases.Size - 1);
-                    }
-
-                    foreach (Room room in roomList)
-                    {
-                        step++;
-                        roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Value = step);
-
-                        double doorsInRoomArea = 0;
-                        double windowssInRoomArea = 0;
-                        double curtainWallArea = 0;
-
-                        List<FamilyInstance> doorsOnRoomLevelList = new List<FamilyInstance>();
-                        if (phase != null)
-                        {
-                            doorsOnRoomLevelList = new FilteredElementCollector(doc)
-                               .OfCategory(BuiltInCategory.OST_Doors)
-                               .OfClass(typeof(FamilyInstance))
-                               .WhereElementIsNotElementType()
-                               .Cast<FamilyInstance>()
-                               .Where(d => d.LevelId == room.LevelId)
-                               .Where(d => d.GetPhaseStatus(phase.Id) != ElementOnPhaseStatus.Demolished)
-                               .ToList();
-                        }
-                        else
-                        {
-                            doorsOnRoomLevelList = new FilteredElementCollector(doc)
-                               .OfCategory(BuiltInCategory.OST_Doors)
-                               .OfClass(typeof(FamilyInstance))
-                               .WhereElementIsNotElementType()
-                               .Cast<FamilyInstance>()
-                               .Where(d => d.LevelId == room.LevelId)
-                               .ToList();
-                        }
-
-
-                        List<FamilyInstance> doorsInRoomList = doorsOnRoomLevelList
-                            .Where(d => d.Room != null)
-                            .Where(d => d.Room.Id == room.Id)
-                            .ToList();
-
-                        List<FamilyInstance> doorsFromRoomList = doorsOnRoomLevelList
-                            .Where(d => d.FromRoom != null)
-                            .Where(d => d.FromRoom.Id == room.Id)
-                            .ToList();
-
-                        List<FamilyInstance> doorsToRoomList = doorsOnRoomLevelList
-                            .Where(d => d.ToRoom != null)
-                            .Where(d => d.ToRoom.Id == room.Id)
-                            .ToList();
-
-                        foreach (FamilyInstance door in doorsFromRoomList)
-                        {
-                            if (!doorsInRoomList.Contains(door))
-                            {
-                                doorsInRoomList.Add(door);
-                            }
-                        }
-
-                        foreach (FamilyInstance door in doorsToRoomList)
-                        {
-                            if (!doorsInRoomList.Contains(door))
-                            {
-                                doorsInRoomList.Add(door);
-                            }
-                        }
-
-                        foreach (FamilyInstance door in doorsInRoomList)
-                        {
-                            double roughHeight = 0;
-                            double roughWidth = 0;
-                            double caseworkHeight = 0;
-                            double caseworkWidth = 0;
-                            double maxHeight = 0;
-                            double maxWidth = 0;
-
-                            if (door.Symbol.get_Parameter(BuiltInParameter.FAMILY_ROUGH_HEIGHT_PARAM) != null)
-                            {
-                                roughHeight = door.Symbol.get_Parameter(BuiltInParameter.FAMILY_ROUGH_HEIGHT_PARAM).AsDouble();
-                            }
-                            if (door.Symbol.get_Parameter(BuiltInParameter.FAMILY_ROUGH_WIDTH_PARAM) != null)
-                            {
-                                roughWidth = door.Symbol.get_Parameter(BuiltInParameter.FAMILY_ROUGH_WIDTH_PARAM).AsDouble();
-                            }
-                            if (door.Symbol.get_Parameter(BuiltInParameter.CASEWORK_HEIGHT) != null)
-                            {
-                                caseworkHeight = door.Symbol.get_Parameter(BuiltInParameter.CASEWORK_HEIGHT).AsDouble();
-                            }
-                            if (door.Symbol.get_Parameter(BuiltInParameter.CASEWORK_WIDTH) != null)
-                            {
-                                caseworkWidth = door.Symbol.get_Parameter(BuiltInParameter.CASEWORK_WIDTH).AsDouble();
-                            }
-
-                            if (roughHeight >= caseworkHeight)
-                            {
-                                maxHeight = roughHeight;
-                            }
-                            else
-                            {
-                                maxHeight = caseworkHeight;
-                            }
-
-                            if (roughWidth >= caseworkWidth)
-                            {
-                                maxWidth = roughWidth;
-                            }
-                            else
-                            {
-                                maxWidth = caseworkWidth;
-                            }
-
-                            doorsInRoomArea += maxHeight * maxWidth;
-                        }
-
-                        List<FamilyInstance> windowsOnRoomLevelList = new List<FamilyInstance>();
-                        if (phase != null)
-                        {
-                            windowsOnRoomLevelList = new FilteredElementCollector(doc)
-                                .OfCategory(BuiltInCategory.OST_Windows)
-                                .OfClass(typeof(FamilyInstance))
-                                .WhereElementIsNotElementType()
-                                .Cast<FamilyInstance>()
-                                .Where(w => w.LevelId == room.LevelId)
-                                .Where(d => d.GetPhaseStatus(phase.Id) != ElementOnPhaseStatus.Demolished)
-                                .ToList();
-                        }
-                        else
-                        {
-                            windowsOnRoomLevelList = new FilteredElementCollector(doc)
-                                .OfCategory(BuiltInCategory.OST_Windows)
-                                .OfClass(typeof(FamilyInstance))
-                                .WhereElementIsNotElementType()
-                                .Cast<FamilyInstance>()
-                                .Where(w => w.LevelId == room.LevelId)
-                                .ToList();
-                        }
-
-
-                        List<FamilyInstance> windowsInRoomList = windowsOnRoomLevelList
-                            .Where(w => w.Room != null)
-                            .Where(w => w.Room.Id == room.Id)
-                            .ToList();
-
-                        List<FamilyInstance> windowsFromRoomList = windowsOnRoomLevelList
-                            .Where(w => w.FromRoom != null)
-                            .Where(w => w.FromRoom.Id == room.Id)
-                            .ToList();
-
-                        List<FamilyInstance> windowsToRoomList = windowsOnRoomLevelList
-                            .Where(w => w.ToRoom != null)
-                            .Where(w => w.ToRoom.Id == room.Id)
-                            .ToList();
-
-                        foreach (FamilyInstance window in windowsFromRoomList)
-                        {
-                            if (!windowsInRoomList.Contains(window))
-                            {
-                                windowsInRoomList.Add(window);
-                            }
-                        }
-
-                        foreach (FamilyInstance window in windowsToRoomList)
-                        {
-                            if (!windowsInRoomList.Contains(window))
-                            {
-                                windowsInRoomList.Add(window);
-                            }
-                        }
-
-                        foreach (FamilyInstance window in windowsInRoomList)
-                        {
-                            double roughHeight = 0;
-                            double roughWidth = 0;
-                            double caseworkHeight = 0;
-                            double caseworkWidth = 0;
-                            double maxHeight = 0;
-                            double maxWidth = 0;
-
-                            if (window.Symbol.get_Parameter(BuiltInParameter.FAMILY_ROUGH_HEIGHT_PARAM) != null)
-                            {
-                                roughHeight = window.Symbol.get_Parameter(BuiltInParameter.FAMILY_ROUGH_HEIGHT_PARAM).AsDouble();
-                            }
-                            if (window.Symbol.get_Parameter(BuiltInParameter.FAMILY_ROUGH_WIDTH_PARAM) != null)
-                            {
-                                roughWidth = window.Symbol.get_Parameter(BuiltInParameter.FAMILY_ROUGH_WIDTH_PARAM).AsDouble();
-                            }
-                            if (window.Symbol.get_Parameter(BuiltInParameter.CASEWORK_HEIGHT) != null)
-                            {
-                                caseworkHeight = window.Symbol.get_Parameter(BuiltInParameter.CASEWORK_HEIGHT).AsDouble();
-                            }
-                            if (window.Symbol.get_Parameter(BuiltInParameter.CASEWORK_WIDTH) != null)
-                            {
-                                caseworkWidth = window.Symbol.get_Parameter(BuiltInParameter.CASEWORK_WIDTH).AsDouble();
-                            }
-
-                            if (roughHeight >= caseworkHeight)
-                            {
-                                maxHeight = roughHeight;
-                            }
-                            else
-                            {
-                                maxHeight = caseworkHeight;
-                            }
-
-                            if (roughWidth >= caseworkWidth)
-                            {
-                                maxWidth = roughWidth;
-                            }
-                            else
-                            {
-                                maxWidth = caseworkWidth;
-                            }
-
-                            windowssInRoomArea += maxHeight * maxWidth;
-                        }
-
-                        Solid roomSolid = null;
-                        GeometryElement geomRoomElement = room.get_Geometry(new Options());
-                        foreach (GeometryObject geomObj in geomRoomElement)
-                        {
-                            roomSolid = geomObj as Solid;
-                            if (roomSolid != null) break;
-                        }
-                        if (roomSolid != null)
-                        {
-                            List<Wall> curtainWallsList = new List<Wall>();
-                            if (phase != null)
-                            {
-                                curtainWallsList = new FilteredElementCollector(doc)
-                                    .OfCategory(BuiltInCategory.OST_Walls)
-                                    .OfClass(typeof(Wall))
-                                    .WhereElementIsNotElementType()
-                                    .Cast<Wall>()
-                                    .Where(w => w.LevelId == room.LevelId)
-                                    .Where(w => w.CurtainGrid != null)
-                                    .Where(w => w.GetPhaseStatus(phase.Id) != ElementOnPhaseStatus.Demolished)
-                                    .ToList();
-                            }
-                            else
-                            {
-                                curtainWallsList = new FilteredElementCollector(doc)
-                                    .OfCategory(BuiltInCategory.OST_Walls)
-                                    .OfClass(typeof(Wall))
-                                    .WhereElementIsNotElementType()
-                                    .Cast<Wall>()
-                                    .Where(w => w.LevelId == room.LevelId)
-                                    .Where(w => w.CurtainGrid != null)
-                                    .ToList();
-                            }
-
-                            SolidCurveIntersectionOptions intersectOptions = new SolidCurveIntersectionOptions();
-                            foreach (Wall wall in curtainWallsList)
-                            {
-                                List<ElementId> CurtainPanelsIdList = wall.CurtainGrid.GetPanelIds().ToList();
-                                foreach (ElementId panelId in CurtainPanelsIdList)
-                                {
-                                    Panel panel = null;
-                                    FamilyInstance doorwindows = null;
-                                    panel = doc.GetElement(panelId) as Panel;
-                                    if (panel == null)
-                                    {
-                                        doorwindows = doc.GetElement(panelId) as FamilyInstance;
-                                        if (doorwindows != null)
-                                        {
-                                            double curtainWallPanelsHeight = 0;
-                                            double curtainWallPanelsWidth = 0;
-
-                                            if (doorwindows.get_Parameter(BuiltInParameter.CURTAIN_WALL_PANELS_HEIGHT) != null)
-                                            {
-                                                curtainWallPanelsHeight = doorwindows.get_Parameter(BuiltInParameter.CURTAIN_WALL_PANELS_HEIGHT).AsDouble();
-                                            }
-                                            if (doorwindows.get_Parameter(BuiltInParameter.CURTAIN_WALL_PANELS_WIDTH) != null)
-                                            {
-                                                curtainWallPanelsWidth = doorwindows.get_Parameter(BuiltInParameter.CURTAIN_WALL_PANELS_WIDTH).AsDouble();
-                                            }
-
-                                            BoundingBoxXYZ doorwindowsBoundingBox = doorwindows.get_BoundingBox(null);
-                                            if (doorwindowsBoundingBox == null) continue;
-                                            XYZ doorwindowsCenter = (doorwindowsBoundingBox.Max + doorwindowsBoundingBox.Min) / 2;
-                                            Curve lineA = Line.CreateBound(doorwindowsCenter, doorwindowsCenter + (600 / 304.8) * doorwindows.FacingOrientation.Normalize()) as Curve;
-                                            Curve lineB = Line.CreateBound(doorwindowsCenter, doorwindowsCenter + (600 / 304.8) * doorwindows.FacingOrientation.Normalize().Negate()) as Curve;
-
-                                            SolidCurveIntersection intersectionA = roomSolid.IntersectWithCurve(lineA, intersectOptions);
-                                            SolidCurveIntersection intersectionB = roomSolid.IntersectWithCurve(lineB, intersectOptions);
-                                            if (intersectionA.SegmentCount > 0 || intersectionB.SegmentCount > 0)
-                                            {
-                                                curtainWallArea += curtainWallPanelsHeight * curtainWallPanelsWidth;
-                                            }
-                                        }
-                                    }
-
-                                    if (panel != null)
-                                    {
-                                        BoundingBoxXYZ panelBoundingBox = panel.get_BoundingBox(null);
-                                        if (panelBoundingBox == null) continue;
-                                        XYZ panelCenter = (panelBoundingBox.Max + panelBoundingBox.Min) / 2;
-                                        Curve lineA = Line.CreateBound(panelCenter, panelCenter + (600 / 304.8) * panel.FacingOrientation.Normalize()) as Curve;
-                                        Curve lineB = Line.CreateBound(panelCenter, panelCenter + (600 / 304.8) * panel.FacingOrientation.Normalize().Negate()) as Curve;
-
-                                        SolidCurveIntersection intersectionA = roomSolid.IntersectWithCurve(lineA, intersectOptions);
-                                        SolidCurveIntersection intersectionB = roomSolid.IntersectWithCurve(lineB, intersectOptions);
-                                        if (intersectionA.SegmentCount > 0 || intersectionB.SegmentCount > 0)
-                                        {
-                                            curtainWallArea += panel.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED).AsDouble();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Guid openingsAreaParamGuid = new Guid("18e3f49d-1315-415f-8359-8f045a7a8938");
-                        if (room.get_Parameter(openingsAreaParamGuid) != null)
-                        {
-                            room.get_Parameter(openingsAreaParamGuid).Set(doorsInRoomArea + windowssInRoomArea + curtainWallArea);
-                        }
-                    }
-                    roomFinishNumeratorOpeningsProgressBarWPF.Dispatcher.Invoke(() => roomFinishNumeratorOpeningsProgressBarWPF.Close());
+                    CalculateOpeningsAreas(doc);
                 }
                 else
                 {
-                    List<Room> roomList = new FilteredElementCollector(doc)
-                        .OfClass(typeof(SpatialElement))
-                        .WhereElementIsNotElementType()
-                        .Where(r => r.GetType() == typeof(Room))
-                        .Cast<Room>()
-                        .Where(r => r.Area > 0)
-                        .OrderBy(r => (doc.GetElement(r.LevelId) as Level).Elevation)
-                        .ToList();
+                    ResetOpeningsAreas(doc);
+                }
 
-                    foreach (Room room in roomList)
+                if (roomFinishNumberingSelectedName == "rbt_EndToEndThroughoutTheProject")
+                {
+                    NumberRoomsEndToEnd(doc, considerCeilings);
+                    if (considerBaseboards)
                     {
-                        Guid openingsAreaParamGuid = new Guid("18e3f49d-1315-415f-8359-8f045a7a8938");
-                        if (room.get_Parameter(openingsAreaParamGuid) != null)
-                        {
-                            room.get_Parameter(openingsAreaParamGuid).Set(0);
-                        }
+                        NumberBaseboardsEndToEnd(doc);
                     }
                 }
-                t.Commit();
+                else if (roomFinishNumberingSelectedName == "rbt_SeparatedByLevels")
+                {
+                    NumberRoomsByLevels(doc, considerCeilings);
+                    if (considerBaseboards)
+                    {
+                        NumberBaseboardsByLevels(doc);
+                    }
+                }
+                tg.Assimilate();
             }
 
-            if (roomFinishNumberingSelectedName == "rbt_EndToEndThroughoutTheProject")
+            return Result.Succeeded;
+        }
+        private bool CheckRequiredParameters(Document doc, string roomFinishNumberingSelectedName, bool considerBaseboards, ref string message)
+        {
+            var rooms = new FilteredElementCollector(doc)
+                        .OfClass(typeof(SpatialElement))
+                        .WhereElementIsNotElementType()
+                        .OfType<Room>()
+                        .Where(r => r.Area > 0)
+                        .ToList();
+
+            bool missingParameters = false;
+
+            if (roomFinishNumberingSelectedName == "rbt_EndToEndThroughoutTheProject" || roomFinishNumberingSelectedName == "rbt_SeparatedByLevels")
             {
-                List<Room> roomList = new FilteredElementCollector(doc)
+                foreach (var room in rooms)
+                {
+                    if (room.LookupParameter("АР_НомераПомещенийВедОтделки") == null ||
+                        room.LookupParameter("АР_ИменаПомещенийВедОтделки") == null ||
+                        room.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL) == null ||
+                        room.LookupParameter("АР_ОтделкаСтенСнизу") == null)
+                    {
+                        message = "Отсутствуют необходимые параметры для нумерации отделки.";
+                        missingParameters = true;
+                        break;
+                    }
+
+                    if (considerBaseboards && room.LookupParameter("АР_НомераПомещенийВедПлинтусов") == null)
+                    {
+                        message = "Отсутствует параметр 'АР_НомераПомещенийВедПлинтусов' для нумерации плинтусов.";
+                        missingParameters = true;
+                        break;
+                    }
+                }
+            }
+
+            return !missingParameters;
+        }
+
+        private void FillZeroInWallFinishHeights(Document doc)
+        {
+            using (var t = new Transaction(doc, "Заполнение нулей в отделке стен снизу"))
+            {
+                t.Start();
+                var roomList = new FilteredElementCollector(doc)
                     .OfClass(typeof(SpatialElement))
                     .WhereElementIsNotElementType()
-                    .Where(r => r.GetType() == typeof(Room))
-                    .Cast<Room>()
+                    .OfType<Room>()
                     .Where(r => r.Area > 0)
                     .OrderBy(r => (doc.GetElement(r.LevelId) as Level).Elevation)
                     .ToList();
 
-                using (TransactionGroup tg = new TransactionGroup(doc))
+                foreach (var room in roomList)
                 {
-                    tg.Start("Нумерация отделки");
-                    if (considerCeilings)
+                    var param = room.LookupParameter("АР_ВысотаОтделкиСтенСнизу");
+                    if (param != null && !param.IsReadOnly && param.AsDouble().Equals(0))
                     {
-                        List<RoomProperties> roomPropertiesList = new List<RoomProperties>();
-                        foreach (Room room in roomList)
-                        {
-                            RoomProperties tempRoomProperties = new RoomProperties();
-                            tempRoomProperties.CeilingFinishStrParam = room.get_Parameter(BuiltInParameter.ROOM_FINISH_CEILING).AsString();
-                            tempRoomProperties.WallFinishStrParam = room.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL).AsString();
-                            tempRoomProperties.BottomWallFinishStrParam = room.LookupParameter("АР_ОтделкаСтенСнизу").AsString();
-
-                            //НЕ УВЕРЕН В ПРОВЕРКЕ!!!
-                            if (!roomPropertiesList.Contains(tempRoomProperties))
-                            {
-                                roomPropertiesList.Add(tempRoomProperties);
-                            }
-                        }
-
-                        Thread newWindowThread = new Thread(new ThreadStart(ThreadStartingPoint));
-                        newWindowThread.SetApartmentState(ApartmentState.STA);
-                        newWindowThread.IsBackground = true;
-                        newWindowThread.Start();
-                        int step = 0;
-                        Thread.Sleep(100);
-                        roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Minimum = 0);
-                        roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Maximum = roomPropertiesList.Count);
-
-                        using (Transaction t = new Transaction(doc))
-                        {
-                            t.Start("Внесение номеров в помещения");
-                            foreach (RoomProperties rp in roomPropertiesList)
-                            {
-                                step++;
-                                roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Value = step);
-
-                                List<Room> roomListForNumbering = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(SpatialElement))
-                                    .WhereElementIsNotElementType()
-                                    .Where(r => r.GetType() == typeof(Room))
-                                    .Cast<Room>()
-                                    .Where(r => r.Area > 0)
-                                    .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_CEILING) != null)
-                                    .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_CEILING).AsString() == rp.CeilingFinishStrParam)
-                                    .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL) != null)
-                                    .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL).AsString() == rp.WallFinishStrParam)
-                                    .Where(r => r.LookupParameter("АР_ОтделкаСтенСнизу") != null)
-                                    .Where(r => r.LookupParameter("АР_ОтделкаСтенСнизу").AsString() == rp.BottomWallFinishStrParam)
-                                    .OrderBy(r => r.Number, new AlphanumComparatorFastString())
-                                    .ToList();
-
-                                string roomNumbersByRoom = null;
-                                List<string> roomNamesByRoomList = new List<string>();
-                                string roomNamesByRoom = null;
-                                foreach (Room r in roomListForNumbering)
-                                {
-                                    if (roomNumbersByRoom == null)
-                                    {
-                                        roomNumbersByRoom += r.Number;
-                                        roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
-                                    }
-                                    else
-                                    {
-                                        roomNumbersByRoom += ", " + r.Number;
-                                        roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
-                                    }
-                                }
-
-                                roomNamesByRoomList = roomNamesByRoomList.Distinct().ToList();
-                                roomNamesByRoomList.Sort(new AlphanumComparatorFastString());
-
-                                foreach (string roomName in roomNamesByRoomList)
-                                {
-                                    if (roomNamesByRoom == null)
-                                    {
-                                        roomNamesByRoom += roomName;
-                                    }
-                                    else
-                                    {
-                                        roomNamesByRoom += ", " + roomName;
-                                    }
-                                }
-
-                                foreach (Room r in roomListForNumbering)
-                                {
-                                    r.LookupParameter("АР_НомераПомещенийВедОтделки").Set(roomNumbersByRoom);
-                                    r.LookupParameter("АР_ИменаПомещенийВедОтделки").Set(roomNamesByRoom);
-                                }
-                            }
-                            roomFinishNumeratorProgressBarWPF.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.Close());
-                            t.Commit();
-                        }
+                        room.LookupParameter("АР_ВысотаОтделкиСтенСнизу").Set(0);
                     }
-                    else
-                    {
-                        List<RoomProperties> roomPropertiesList = new List<RoomProperties>();
-                        foreach (Room room in roomList)
-                        {
-                            RoomProperties tempRoomProperties = new RoomProperties();
-                            tempRoomProperties.WallFinishStrParam = room.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL).AsString();
-                            tempRoomProperties.BottomWallFinishStrParam = room.LookupParameter("АР_ОтделкаСтенСнизу").AsString();
-
-                            //НЕ УВЕРЕН В ПРОВЕРКЕ!!!
-                            if (!roomPropertiesList.Contains(tempRoomProperties))
-                            {
-                                roomPropertiesList.Add(tempRoomProperties);
-                            }
-                        }
-
-                        Thread newWindowThread = new Thread(new ThreadStart(ThreadStartingPoint));
-                        newWindowThread.SetApartmentState(ApartmentState.STA);
-                        newWindowThread.IsBackground = true;
-                        newWindowThread.Start();
-                        int step = 0;
-                        Thread.Sleep(100);
-                        roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Minimum = 0);
-                        roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Maximum = roomPropertiesList.Count);
-
-                        using (Transaction t = new Transaction(doc))
-                        {
-                            t.Start("Внесение номеров в помещения");
-                            foreach (RoomProperties rp in roomPropertiesList)
-                            {
-                                step++;
-                                roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Value = step);
-
-                                List<Room> roomListForNumbering = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(SpatialElement))
-                                    .WhereElementIsNotElementType()
-                                    .Where(r => r.GetType() == typeof(Room))
-                                    .Cast<Room>()
-                                    .Where(r => r.Area > 0)
-                                    .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL) != null)
-                                    .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL).AsString() == rp.WallFinishStrParam)
-                                    .Where(r => r.LookupParameter("АР_ОтделкаСтенСнизу") != null)
-                                    .Where(r => r.LookupParameter("АР_ОтделкаСтенСнизу").AsString() == rp.BottomWallFinishStrParam)
-                                    .OrderBy(r => r.Number, new AlphanumComparatorFastString())
-                                    .ToList();
-
-                                string roomNumbersByRoom = null;
-                                List<string> roomNamesByRoomList = new List<string>();
-                                string roomNamesByRoom = null;
-                                foreach (Room r in roomListForNumbering)
-                                {
-                                    if (roomNumbersByRoom == null)
-                                    {
-                                        roomNumbersByRoom += r.Number;
-                                        roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
-                                    }
-                                    else
-                                    {
-                                        roomNumbersByRoom += ", " + r.Number;
-                                        roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
-                                    }
-                                }
-
-                                roomNamesByRoomList = roomNamesByRoomList.Distinct().ToList();
-                                roomNamesByRoomList.Sort(new AlphanumComparatorFastString());
-
-                                foreach (string roomName in roomNamesByRoomList)
-                                {
-                                    if (roomNamesByRoom == null)
-                                    {
-                                        roomNamesByRoom += roomName;
-                                    }
-                                    else
-                                    {
-                                        roomNamesByRoom += ", " + roomName;
-                                    }
-                                }
-
-                                foreach (Room r in roomListForNumbering)
-                                {
-                                    r.LookupParameter("АР_НомераПомещенийВедОтделки").Set(roomNumbersByRoom);
-                                    r.LookupParameter("АР_ИменаПомещенийВедОтделки").Set(roomNamesByRoom);
-                                }
-                            }
-                            roomFinishNumeratorProgressBarWPF.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.Close());
-                            t.Commit();
-                        }
-                    }
-                    tg.Assimilate();
                 }
-
+                t.Commit();
             }
-            else if (roomFinishNumberingSelectedName == "rbt_SeparatedByLevels")
-            {
-                List<Level> levelList = new FilteredElementCollector(doc)
-                   .OfClass(typeof(Level))
-                   .WhereElementIsNotElementType()
-                   .Cast<Level>()
-                   .OrderBy(l => l.Elevation)
-                   .ToList();
-
-                Thread newWindowThread = new Thread(new ThreadStart(ThreadStartingPoint));
-                newWindowThread.SetApartmentState(ApartmentState.STA);
-                newWindowThread.IsBackground = true;
-                newWindowThread.Start();
-                int step = 0;
-                Thread.Sleep(100);
-                roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Minimum = 0);
-                roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Maximum = levelList.Count);
-
-                using (TransactionGroup tg = new TransactionGroup(doc))
-                {
-                    tg.Start("Нумерация отделки");
-                    if (considerCeilings)
-                    {
-                        using (Transaction t = new Transaction(doc))
-                        {
-                            t.Start("Внесение номеров в помещения");
-                            foreach (Level lv in levelList)
-                            {
-                                step++;
-                                roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Value = step);
-
-                                List<Room> roomList = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(SpatialElement))
-                                    .WhereElementIsNotElementType()
-                                    .Where(r => r.GetType() == typeof(Room))
-                                    .Cast<Room>()
-                                    .Where(r => r.Area > 0)
-                                    .Where(r => r.LevelId == lv.Id)
-                                    .ToList();
-
-                                List<RoomProperties> roomPropertiesList = new List<RoomProperties>();
-                                foreach (Room room in roomList)
-                                {
-                                    RoomProperties tempRoomProperties = new RoomProperties();
-                                    tempRoomProperties.CeilingFinishStrParam = room.get_Parameter(BuiltInParameter.ROOM_FINISH_CEILING).AsString();
-                                    tempRoomProperties.WallFinishStrParam = room.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL).AsString();
-                                    tempRoomProperties.BottomWallFinishStrParam = room.LookupParameter("АР_ОтделкаСтенСнизу").AsString();
-
-                                    //НЕ УВЕРЕН В ПРОВЕРКЕ!!!
-                                    if (!roomPropertiesList.Contains(tempRoomProperties))
-                                    {
-                                        roomPropertiesList.Add(tempRoomProperties);
-                                    }
-                                }
-                                foreach (RoomProperties rp in roomPropertiesList)
-                                {
-                                    List<Room> roomListForNumbering = new FilteredElementCollector(doc)
-                                        .OfClass(typeof(SpatialElement))
-                                        .WhereElementIsNotElementType()
-                                        .Where(r => r.GetType() == typeof(Room))
-                                        .Cast<Room>()
-                                        .Where(r => r.Area > 0)
-                                        .Where(r => r.LevelId == lv.Id)
-                                        .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_CEILING) != null)
-                                        .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_CEILING).AsString() == rp.CeilingFinishStrParam)
-                                        .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL) != null)
-                                        .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL).AsString() == rp.WallFinishStrParam)
-                                        .Where(r => r.LookupParameter("АР_ОтделкаСтенСнизу") != null)
-                                        .Where(r => r.LookupParameter("АР_ОтделкаСтенСнизу").AsString() == rp.BottomWallFinishStrParam)
-                                        .OrderBy(r => r.Number, new AlphanumComparatorFastString())
-                                        .ToList();
-
-                                    string roomNumbersByRoom = null;
-                                    List<string> roomNamesByRoomList = new List<string>();
-                                    string roomNamesByRoom = null;
-                                    foreach (Room r in roomListForNumbering)
-                                    {
-                                        if (roomNumbersByRoom == null)
-                                        {
-                                            roomNumbersByRoom += r.Number;
-                                            roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
-                                        }
-                                        else
-                                        {
-                                            roomNumbersByRoom += ", " + r.Number;
-                                            roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
-                                        }
-                                    }
-
-                                    roomNamesByRoomList = roomNamesByRoomList.Distinct().ToList();
-                                    roomNamesByRoomList.Sort(new AlphanumComparatorFastString());
-
-                                    foreach (string roomName in roomNamesByRoomList)
-                                    {
-                                        if (roomNamesByRoom == null)
-                                        {
-                                            roomNamesByRoom += roomName;
-                                        }
-                                        else
-                                        {
-                                            roomNamesByRoom += ", " + roomName;
-                                        }
-                                    }
-
-                                    foreach (Room r in roomListForNumbering)
-                                    {
-                                        r.LookupParameter("АР_НомераПомещенийВедОтделки").Set(roomNumbersByRoom);
-                                        r.LookupParameter("АР_ИменаПомещенийВедОтделки").Set(roomNamesByRoom);
-                                    }
-                                }
-                            }
-                            roomFinishNumeratorProgressBarWPF.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.Close());
-                            t.Commit();
-                        }
-
-                    }
-                    else
-                    {
-                        using (Transaction t = new Transaction(doc))
-                        {
-                            t.Start("Внесение номеров в помещения");
-                            foreach (Level lv in levelList)
-                            {
-                                step++;
-                                roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Value = step);
-
-                                List<Room> roomList = new FilteredElementCollector(doc)
-                                    .OfClass(typeof(SpatialElement))
-                                    .WhereElementIsNotElementType()
-                                    .Where(r => r.GetType() == typeof(Room))
-                                    .Cast<Room>()
-                                    .Where(r => r.Area > 0)
-                                    .Where(r => r.LevelId == lv.Id)
-                                    .ToList();
-
-                                List<RoomProperties> roomPropertiesList = new List<RoomProperties>();
-                                foreach (Room room in roomList)
-                                {
-                                    RoomProperties tempRoomProperties = new RoomProperties();
-                                    tempRoomProperties.WallFinishStrParam = room.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL).AsString();
-                                    tempRoomProperties.BottomWallFinishStrParam = room.LookupParameter("АР_ОтделкаСтенСнизу").AsString();
-
-                                    //НЕ УВЕРЕН В ПРОВЕРКЕ!!!
-                                    if (!roomPropertiesList.Contains(tempRoomProperties))
-                                    {
-                                        roomPropertiesList.Add(tempRoomProperties);
-                                    }
-                                }
-                                foreach (RoomProperties rp in roomPropertiesList)
-                                {
-                                    List<Room> roomListForNumbering = new FilteredElementCollector(doc)
-                                        .OfClass(typeof(SpatialElement))
-                                        .WhereElementIsNotElementType()
-                                        .Where(r => r.GetType() == typeof(Room))
-                                        .Cast<Room>()
-                                        .Where(r => r.Area > 0)
-                                        .Where(r => r.LevelId == lv.Id)
-                                        .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL) != null)
-                                        .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL).AsString() == rp.WallFinishStrParam)
-                                        .Where(r => r.LookupParameter("АР_ОтделкаСтенСнизу") != null)
-                                        .Where(r => r.LookupParameter("АР_ОтделкаСтенСнизу").AsString() == rp.BottomWallFinishStrParam)
-                                        .OrderBy(r => r.Number, new AlphanumComparatorFastString())
-                                        .ToList();
-
-                                    string roomNumbersByRoom = null;
-                                    List<string> roomNamesByRoomList = new List<string>();
-                                    string roomNamesByRoom = null;
-                                    foreach (Room r in roomListForNumbering)
-                                    {
-                                        if (roomNumbersByRoom == null)
-                                        {
-                                            roomNumbersByRoom += r.Number;
-                                            roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
-                                        }
-                                        else
-                                        {
-                                            roomNumbersByRoom += ", " + r.Number;
-                                            roomNamesByRoomList.Add(r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString());
-                                        }
-                                    }
-
-                                    roomNamesByRoomList = roomNamesByRoomList.Distinct().ToList();
-                                    roomNamesByRoomList.Sort(new AlphanumComparatorFastString());
-
-                                    foreach (string roomName in roomNamesByRoomList)
-                                    {
-                                        if (roomNamesByRoom == null)
-                                        {
-                                            roomNamesByRoom += roomName;
-                                        }
-                                        else
-                                        {
-                                            roomNamesByRoom += ", " + roomName;
-                                        }
-                                    }
-
-                                    foreach (Room r in roomListForNumbering)
-                                    {
-                                        r.LookupParameter("АР_НомераПомещенийВедОтделки").Set(roomNumbersByRoom);
-                                        r.LookupParameter("АР_ИменаПомещенийВедОтделки").Set(roomNamesByRoom);
-                                    }
-                                }
-                            }
-                            roomFinishNumeratorProgressBarWPF.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.Close());
-                            t.Commit();
-                        }
-                    }
-                    tg.Assimilate();
-                }
-
-            }
-            return Result.Succeeded;
         }
+
+        private void CalculateOpeningsAreas(Document doc)
+        {
+            using (var t = new Transaction(doc, "Вычисление площадей проемов"))
+            {
+                t.Start();
+                var roomList = GetRooms(doc);
+                StartProgressBarForOpenings(roomList.Count);
+
+                Phase phase = GetLastPhase(doc);
+
+                int step = 0;
+                foreach (var room in roomList)
+                {
+                    step++;
+                    UpdateProgressBarForOpenings(step);
+
+                    double doorsInRoomArea = CalculateDoorsArea(doc, room, phase);
+                    double windowsInRoomArea = CalculateWindowsArea(doc, room, phase);
+                    double curtainWallArea = CalculateCurtainWallArea(doc, room, phase);
+
+                    var openingsAreaParamGuid = new Guid("18e3f49d-1315-415f-8359-8f045a7a8938");
+                    var param = room.get_Parameter(openingsAreaParamGuid);
+                    param?.Set(doorsInRoomArea + windowsInRoomArea + curtainWallArea);
+                }
+
+                CloseProgressBarForOpenings();
+                t.Commit();
+            }
+        }
+
+        private void ResetOpeningsAreas(Document doc)
+        {
+            using (var t = new Transaction(doc, "Сброс площадей проемов"))
+            {
+                t.Start();
+                var roomList = GetRooms(doc);
+
+                var openingsAreaParamGuid = new Guid("18e3f49d-1315-415f-8359-8f045a7a8938");
+                foreach (var room in roomList)
+                {
+                    var param = room.get_Parameter(openingsAreaParamGuid);
+                    if (param != null)
+                    {
+                        room.get_Parameter(openingsAreaParamGuid).Set(0);
+                    }
+                }
+                t.Commit();
+            }
+        }
+
+        private void NumberRoomsEndToEnd(Document doc, bool considerCeilings)
+        {
+            using (var tg = new TransactionGroup(doc, "Нумерация отделки"))
+            {
+                tg.Start();
+                var roomList = GetRooms(doc);
+                var roomPropertiesList = GetRoomPropertiesList(roomList, considerCeilings);
+
+                StartProgressBar(roomPropertiesList.Count);
+
+                int step = 0;
+                using (var t = new Transaction(doc, "Внесение номеров в помещения"))
+                {
+                    t.Start();
+                    foreach (var rp in roomPropertiesList)
+                    {
+                        step++;
+                        UpdateProgressBar(step);
+
+                        var roomListForNumbering = GetRoomsForNumbering(doc, rp, considerCeilings);
+                        var roomNumbersByRoom = string.Join(", ", roomListForNumbering.Select(r => r.Number));
+                        var roomNamesByRoom = string.Join(", ", roomListForNumbering.Select(r => r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString()).Distinct());
+
+                        foreach (var r in roomListForNumbering)
+                        {
+                            r.LookupParameter("АР_НомераПомещенийВедОтделки").Set(roomNumbersByRoom);
+                            r.LookupParameter("АР_ИменаПомещенийВедОтделки").Set(roomNamesByRoom);
+                        }
+                    }
+                    CloseProgressBar();
+                    t.Commit();
+                }
+                tg.Assimilate();
+            }
+        }
+
+        private void NumberRoomsByLevels(Document doc, bool considerCeilings)
+        {
+            using (var tg = new TransactionGroup(doc, "Нумерация отделки"))
+            {
+                tg.Start();
+                var levelList = GetLevels(doc);
+                StartProgressBar(levelList.Count);
+
+                int step = 0;
+                foreach (var lv in levelList)
+                {
+                    step++;
+                    UpdateProgressBar(step);
+
+                    var roomList = GetRoomsOnLevel(doc, lv);
+                    var roomPropertiesList = GetRoomPropertiesList(roomList, considerCeilings);
+
+                    using (var t = new Transaction(doc, "Внесение номеров в помещения"))
+                    {
+                        t.Start();
+                        foreach (var rp in roomPropertiesList)
+                        {
+                            var roomListForNumbering = GetRoomsForNumberingOnLevel(doc, rp, lv, considerCeilings);
+                            var roomNumbersByRoom = string.Join(", ", roomListForNumbering.Select(r => r.Number));
+                            var roomNamesByRoom = string.Join(", ", roomListForNumbering.Select(r => r.get_Parameter(BuiltInParameter.ROOM_NAME).AsString()).Distinct());
+
+                            foreach (var r in roomListForNumbering)
+                            {
+                                r.LookupParameter("АР_НомераПомещенийВедОтделки").Set(roomNumbersByRoom);
+                                r.LookupParameter("АР_ИменаПомещенийВедОтделки").Set(roomNamesByRoom);
+                            }
+                        }
+                        t.Commit();
+                    }
+                }
+                CloseProgressBar();
+                tg.Assimilate();
+            }
+        }
+
+        private void NumberBaseboardsEndToEnd(Document doc)
+        {
+            using (var tg = new TransactionGroup(doc, "Нумерация плинтусов"))
+            {
+                tg.Start();
+                var roomList = GetRooms(doc);
+                var baseboardPropertiesList = GetBaseboardPropertiesList(roomList);
+
+                StartProgressBar(baseboardPropertiesList.Count);
+
+                int step = 0;
+                using (var t = new Transaction(doc, "Внесение номеров плинтусов в помещения"))
+                {
+                    t.Start();
+                    foreach (var bp in baseboardPropertiesList)
+                    {
+                        step++;
+                        UpdateProgressBar(step);
+
+                        var roomListForNumbering = GetRoomsForBaseboardNumbering(doc, bp);
+                        var baseboardNumbersByRoom = string.Join(", ", roomListForNumbering.Select(r => r.Number));
+
+                        foreach (var r in roomListForNumbering)
+                        {
+                            r.LookupParameter("АР_НомераПомещенийВедПлинтусов").Set(baseboardNumbersByRoom);
+                        }
+                    }
+                    CloseProgressBar();
+                    t.Commit();
+                }
+                tg.Assimilate();
+            }
+        }
+
+        private void NumberBaseboardsByLevels(Document doc)
+        {
+            using (var tg = new TransactionGroup(doc, "Нумерация плинтусов"))
+            {
+                tg.Start();
+                var levelList = GetLevels(doc);
+                StartProgressBar(levelList.Count);
+
+                int step = 0;
+                foreach (var lv in levelList)
+                {
+                    step++;
+                    UpdateProgressBar(step);
+
+                    var roomList = GetRoomsOnLevel(doc, lv);
+                    var baseboardPropertiesList = GetBaseboardPropertiesList(roomList);
+
+                    using (var t = new Transaction(doc, "Внесение номеров плинтусов в помещения"))
+                    {
+                        t.Start();
+                        foreach (var bp in baseboardPropertiesList)
+                        {
+                            var roomListForNumbering = GetRoomsForBaseboardNumberingOnLevel(doc, bp, lv);
+                            var baseboardNumbersByRoom = string.Join(", ", roomListForNumbering.Select(r => r.Number));
+
+                            foreach (var r in roomListForNumbering)
+                            {
+                                r.LookupParameter("АР_НомераПомещенийВедПлинтусов").Set(baseboardNumbersByRoom);
+                            }
+                        }
+                        t.Commit();
+                    }
+                }
+                CloseProgressBar();
+                tg.Assimilate();
+            }
+        }
+
+        private List<Room> GetRooms(Document doc)
+        {
+            return new FilteredElementCollector(doc)
+                .OfClass(typeof(SpatialElement))
+                .WhereElementIsNotElementType()
+                .OfType<Room>()
+                .Where(r => r.Area > 0)
+                .OrderBy(r => (doc.GetElement(r.LevelId) as Level).Elevation)
+                .ToList();
+        }
+
+        private List<Room> GetRoomsOnLevel(Document doc, Level level)
+        {
+            return new FilteredElementCollector(doc)
+                .OfClass(typeof(SpatialElement))
+                .WhereElementIsNotElementType()
+                .OfType<Room>()
+                .Where(r => r.Area > 0)
+                .Where(r => r.LevelId == level.Id)
+                .ToList();
+        }
+
+        private List<RoomProperties> GetRoomPropertiesList(List<Room> roomList, bool considerCeilings)
+        {
+            var roomPropertiesList = new List<RoomProperties>();
+            foreach (var room in roomList)
+            {
+                var tempRoomProperties = new RoomProperties
+                {
+                    CeilingFinishStrParam = considerCeilings ? room.get_Parameter(BuiltInParameter.ROOM_FINISH_CEILING).AsString() : null,
+                    WallFinishStrParam = room.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL).AsString(),
+                    BottomWallFinishStrParam = room.LookupParameter("АР_ОтделкаСтенСнизу").AsString()
+                };
+
+                if (!roomPropertiesList.Contains(tempRoomProperties))
+                {
+                    roomPropertiesList.Add(tempRoomProperties);
+                }
+            }
+
+            return roomPropertiesList;
+        }
+
+        private List<BaseboardProperties> GetBaseboardPropertiesList(List<Room> roomList)
+        {
+            var baseboardPropertiesList = new List<BaseboardProperties>();
+            foreach (var room in roomList)
+            {
+                var tempBaseboardProperties = new BaseboardProperties
+                {
+                    BaseboardTypeStrParam = room.get_Parameter(BuiltInParameter.ROOM_FINISH_BASE).AsString()
+                };
+
+                if (!baseboardPropertiesList.Contains(tempBaseboardProperties))
+                {
+                    baseboardPropertiesList.Add(tempBaseboardProperties);
+                }
+            }
+
+            return baseboardPropertiesList;
+        }
+
+        private List<Room> GetRoomsForNumbering(Document doc, RoomProperties rp, bool considerCeilings)
+        {
+            var query = new FilteredElementCollector(doc)
+                .OfClass(typeof(SpatialElement))
+                .WhereElementIsNotElementType()
+                .OfType<Room>()
+                .Where(r => r.Area > 0)
+                .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL).AsString() == rp.WallFinishStrParam)
+                .Where(r => r.LookupParameter("АР_ОтделкаСтенСнизу").AsString() == rp.BottomWallFinishStrParam);
+
+            if (considerCeilings)
+            {
+                query = query.Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_CEILING).AsString() == rp.CeilingFinishStrParam);
+            }
+
+            return query.OrderBy(r => r.Number, new AlphanumComparatorFastString()).ToList();
+        }
+
+        private List<Room> GetRoomsForNumberingOnLevel(Document doc, RoomProperties rp, Level level, bool considerCeilings)
+        {
+            var query = new FilteredElementCollector(doc)
+                .OfClass(typeof(SpatialElement))
+                .WhereElementIsNotElementType()
+                .OfType<Room>()
+                .Where(r => r.Area > 0)
+                .Where(r => r.LevelId == level.Id)
+                .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_WALL).AsString() == rp.WallFinishStrParam)
+                .Where(r => r.LookupParameter("АР_ОтделкаСтенСнизу").AsString() == rp.BottomWallFinishStrParam);
+
+            if (considerCeilings)
+            {
+                query = query.Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_CEILING).AsString() == rp.CeilingFinishStrParam);
+            }
+
+            return query.OrderBy(r => r.Number, new AlphanumComparatorFastString()).ToList();
+        }
+
+        private List<Room> GetRoomsForBaseboardNumbering(Document doc, BaseboardProperties bp)
+        {
+            return new FilteredElementCollector(doc)
+                .OfClass(typeof(SpatialElement))
+                .WhereElementIsNotElementType()
+                .OfType<Room>()
+                .Where(r => r.Area > 0)
+                .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_BASE).AsString() == bp.BaseboardTypeStrParam)
+                .OrderBy(r => r.Number, new AlphanumComparatorFastString())
+                .ToList();
+        }
+
+        private List<Room> GetRoomsForBaseboardNumberingOnLevel(Document doc, BaseboardProperties bp, Level level)
+        {
+            return new FilteredElementCollector(doc)
+                .OfClass(typeof(SpatialElement))
+                .WhereElementIsNotElementType()
+                .OfType<Room>()
+                .Where(r => r.Area > 0)
+                .Where(r => r.LevelId == level.Id)
+                .Where(r => r.get_Parameter(BuiltInParameter.ROOM_FINISH_BASE).AsString() == bp.BaseboardTypeStrParam)
+                .OrderBy(r => r.Number, new AlphanumComparatorFastString())
+                .ToList();
+        }
+
+        private Phase GetLastPhase(Document doc)
+        {
+            var phases = doc.Phases;
+            return phases.Size > 0 ? phases.get_Item(phases.Size - 1) : null;
+        }
+
+        private double CalculateDoorsArea(Document doc, Room room, Phase phase)
+        {
+            var doorsInRoomArea = 0.0;
+            var doorsOnRoomLevelList = new FilteredElementCollector(doc)
+                .OfCategory(BuiltInCategory.OST_Doors)
+                .OfClass(typeof(FamilyInstance))
+                .WhereElementIsNotElementType()
+                .OfType<FamilyInstance>()
+                .Where(d => d.LevelId == room.LevelId)
+                .Where(d => phase == null || d.GetPhaseStatus(phase.Id) != ElementOnPhaseStatus.Demolished)
+                .ToList();
+
+            var doorsInRoomList = doorsOnRoomLevelList
+                .Where(d => d.Room?.Id == room.Id || d.FromRoom?.Id == room.Id || d.ToRoom?.Id == room.Id)
+                .Distinct()
+                .ToList();
+
+            foreach (var door in doorsInRoomList)
+            {
+                var roughHeight = door.Symbol.get_Parameter(BuiltInParameter.FAMILY_ROUGH_HEIGHT_PARAM)?.AsDouble() ?? 0;
+                var roughWidth = door.Symbol.get_Parameter(BuiltInParameter.FAMILY_ROUGH_WIDTH_PARAM)?.AsDouble() ?? 0;
+                var caseworkHeight = door.Symbol.get_Parameter(BuiltInParameter.CASEWORK_HEIGHT)?.AsDouble() ?? 0;
+                var caseworkWidth = door.Symbol.get_Parameter(BuiltInParameter.CASEWORK_WIDTH)?.AsDouble() ?? 0;
+
+                var maxHeight = Math.Max(roughHeight, caseworkHeight);
+                var maxWidth = Math.Max(roughWidth, caseworkWidth);
+
+                doorsInRoomArea += maxHeight * maxWidth;
+            }
+
+            return doorsInRoomArea;
+        }
+
+        private double CalculateWindowsArea(Document doc, Room room, Phase phase)
+        {
+            var windowsInRoomArea = 0.0;
+            var windowsOnRoomLevelList = new FilteredElementCollector(doc)
+                .OfCategory(BuiltInCategory.OST_Windows)
+                .OfClass(typeof(FamilyInstance))
+                .WhereElementIsNotElementType()
+                .OfType<FamilyInstance>()
+                .Where(w => w.LevelId == room.LevelId)
+                .Where(w => phase == null || w.GetPhaseStatus(phase.Id) != ElementOnPhaseStatus.Demolished)
+                .ToList();
+
+            var windowsInRoomList = windowsOnRoomLevelList
+                .Where(w => w.Room?.Id == room.Id || w.FromRoom?.Id == room.Id || w.ToRoom?.Id == room.Id)
+                .Distinct()
+                .ToList();
+
+            foreach (var window in windowsInRoomList)
+            {
+                var roughHeight = window.Symbol.get_Parameter(BuiltInParameter.FAMILY_ROUGH_HEIGHT_PARAM)?.AsDouble() ?? 0;
+                var roughWidth = window.Symbol.get_Parameter(BuiltInParameter.FAMILY_ROUGH_WIDTH_PARAM)?.AsDouble() ?? 0;
+                var caseworkHeight = window.Symbol.get_Parameter(BuiltInParameter.CASEWORK_HEIGHT)?.AsDouble() ?? 0;
+                var caseworkWidth = window.Symbol.get_Parameter(BuiltInParameter.CASEWORK_WIDTH)?.AsDouble() ?? 0;
+
+                var maxHeight = Math.Max(roughHeight, caseworkHeight);
+                var maxWidth = Math.Max(roughWidth, caseworkWidth);
+
+                windowsInRoomArea += maxHeight * maxWidth;
+            }
+
+            return windowsInRoomArea;
+        }
+
+        private double CalculateCurtainWallArea(Document doc, Room room, Phase phase)
+        {
+            var curtainWallArea = 0.0;
+            var roomSolid = GetRoomSolid(room);
+
+            if (roomSolid != null)
+            {
+                var curtainWallsList = new FilteredElementCollector(doc)
+                    .OfCategory(BuiltInCategory.OST_Walls)
+                    .OfClass(typeof(Wall))
+                    .WhereElementIsNotElementType()
+                    .OfType<Wall>()
+                    .Where(w => w.LevelId == room.LevelId)
+                    .Where(w => w.CurtainGrid != null)
+                    .Where(w => phase == null || w.GetPhaseStatus(phase.Id) != ElementOnPhaseStatus.Demolished)
+                    .ToList();
+
+                var intersectOptions = new SolidCurveIntersectionOptions();
+                foreach (var wall in curtainWallsList)
+                {
+                    var curtainPanelsIdList = wall.CurtainGrid.GetPanelIds().ToList();
+                    foreach (var panelId in curtainPanelsIdList)
+                    {
+                        var panel = doc.GetElement(panelId) as Panel;
+                        if (panel == null)
+                        {
+                            var doorwindows = doc.GetElement(panelId) as FamilyInstance;
+                            if (doorwindows != null)
+                            {
+                                var curtainWallPanelsHeight = doorwindows.get_Parameter(BuiltInParameter.CURTAIN_WALL_PANELS_HEIGHT)?.AsDouble() ?? 0;
+                                var curtainWallPanelsWidth = doorwindows.get_Parameter(BuiltInParameter.CURTAIN_WALL_PANELS_WIDTH)?.AsDouble() ?? 0;
+
+                                var doorwindowsBoundingBox = doorwindows.get_BoundingBox(null);
+                                if (doorwindowsBoundingBox == null) continue;
+                                var doorwindowsCenter = (doorwindowsBoundingBox.Max + doorwindowsBoundingBox.Min) / 2;
+                                var lineA = Line.CreateBound(doorwindowsCenter, doorwindowsCenter + (600 / 304.8) * doorwindows.FacingOrientation.Normalize()) as Curve;
+                                var lineB = Line.CreateBound(doorwindowsCenter, doorwindowsCenter + (600 / 304.8) * doorwindows.FacingOrientation.Normalize().Negate()) as Curve;
+
+                                var intersectionA = roomSolid.IntersectWithCurve(lineA, intersectOptions);
+                                var intersectionB = roomSolid.IntersectWithCurve(lineB, intersectOptions);
+                                if (intersectionA.SegmentCount > 0 || intersectionB.SegmentCount > 0)
+                                {
+                                    curtainWallArea += curtainWallPanelsHeight * curtainWallPanelsWidth;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            var panelBoundingBox = panel.get_BoundingBox(null);
+                            if (panelBoundingBox == null) continue;
+                            var panelCenter = (panelBoundingBox.Max + panelBoundingBox.Min) / 2;
+                            var lineA = Line.CreateBound(panelCenter, panelCenter + (600 / 304.8) * panel.FacingOrientation.Normalize()) as Curve;
+                            var lineB = Line.CreateBound(panelCenter, panelCenter + (600 / 304.8) * panel.FacingOrientation.Normalize().Negate()) as Curve;
+
+                            var intersectionA = roomSolid.IntersectWithCurve(lineA, intersectOptions);
+                            var intersectionB = roomSolid.IntersectWithCurve(lineB, intersectOptions);
+                            if (intersectionA.SegmentCount > 0 || intersectionB.SegmentCount > 0)
+                            {
+                                curtainWallArea += panel.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED).AsDouble();
+                            }
+                        }
+                    }
+                }
+            }
+
+            return curtainWallArea;
+        }
+
+        private Solid GetRoomSolid(Room room)
+        {
+            GeometryElement geomRoomElement = room.get_Geometry(new Options());
+            foreach (GeometryObject geomObj in geomRoomElement)
+            {
+                var roomSolid = geomObj as Solid;
+                if (roomSolid != null) return roomSolid;
+            }
+            return null;
+        }
+
+        private List<Level> GetLevels(Document doc)
+        {
+            return new FilteredElementCollector(doc)
+                .OfClass(typeof(Level))
+                .WhereElementIsNotElementType()
+                .OfType<Level>()
+                .OrderBy(l => l.Elevation)
+                .ToList();
+        }
+
+        private void StartProgressBar(int max)
+        {
+            var newWindowThread = new Thread(ThreadStartingPoint);
+            newWindowThread.SetApartmentState(ApartmentState.STA);
+            newWindowThread.IsBackground = true;
+            newWindowThread.Start();
+            Thread.Sleep(100);
+            roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Dispatcher.Invoke(() =>
+            {
+                roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Minimum = 0;
+                roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Maximum = max;
+            });
+        }
+
+        private void UpdateProgressBar(int value)
+        {
+            roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Dispatcher.Invoke(() =>
+                roomFinishNumeratorProgressBarWPF.pb_RoomFinishNumeratorProgressBar.Value = value);
+        }
+
+        private void CloseProgressBar()
+        {
+            roomFinishNumeratorProgressBarWPF.Dispatcher.Invoke(() => roomFinishNumeratorProgressBarWPF.Close());
+        }
+
+        private void StartProgressBarForOpenings(int max)
+        {
+            var newWindowThread = new Thread(ThreadStartingPointForOpenings);
+            newWindowThread.SetApartmentState(ApartmentState.STA);
+            newWindowThread.IsBackground = true;
+            newWindowThread.Start();
+            Thread.Sleep(100);
+            roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Dispatcher.Invoke(() =>
+            {
+                roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Minimum = 0;
+                roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Maximum = max;
+            });
+        }
+
+        private void UpdateProgressBarForOpenings(int value)
+        {
+            roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Dispatcher.Invoke(() =>
+                roomFinishNumeratorOpeningsProgressBarWPF.pb_RoomFinishNumeratorOpeningsProgressBar.Value = value);
+        }
+
+        private void CloseProgressBarForOpenings()
+        {
+            roomFinishNumeratorOpeningsProgressBarWPF.Dispatcher.Invoke(() => roomFinishNumeratorOpeningsProgressBarWPF.Close());
+        }
+
         private void ThreadStartingPoint()
         {
             roomFinishNumeratorProgressBarWPF = new RoomFinishNumeratorProgressBarWPF();
             roomFinishNumeratorProgressBarWPF.Show();
             System.Windows.Threading.Dispatcher.Run();
         }
+
         private void ThreadStartingPointForOpenings()
         {
             roomFinishNumeratorOpeningsProgressBarWPF = new RoomFinishNumeratorOpeningsProgressBarWPF();
             roomFinishNumeratorOpeningsProgressBarWPF.Show();
             System.Windows.Threading.Dispatcher.Run();
         }
+
         private static void GetPluginStartInfo()
         {
-            // Получаем сборку, в которой выполняется текущий код
-            Assembly thisAssembly = Assembly.GetExecutingAssembly();
-            string assemblyName = "RoomFinishNumerator";
-            string assemblyNameRus = "Нумератор отделки";
-            string assemblyFolderPath = Path.GetDirectoryName(thisAssembly.Location);
+            var thisAssembly = Assembly.GetExecutingAssembly();
+            var assemblyName = "RoomFinishNumerator";
+            var assemblyNameRus = "Нумератор отделки";
+            var assemblyFolderPath = Path.GetDirectoryName(thisAssembly.Location);
 
-            int lastBackslashIndex = assemblyFolderPath.LastIndexOf("\\");
-            string dllPath = assemblyFolderPath.Substring(0, lastBackslashIndex + 1) + "PluginInfoCollector\\PluginInfoCollector.dll";
+            var lastBackslashIndex = assemblyFolderPath.LastIndexOf("\\");
+            var dllPath = assemblyFolderPath.Substring(0, lastBackslashIndex + 1) + "PluginInfoCollector\\PluginInfoCollector.dll";
 
-            Assembly assembly = Assembly.LoadFrom(dllPath);
-            Type type = assembly.GetType("PluginInfoCollector.InfoCollector");
+            var assembly = Assembly.LoadFrom(dllPath);
+            var type = assembly.GetType("PluginInfoCollector.InfoCollector");
             var constructor = type.GetConstructor(new Type[] { typeof(string), typeof(string) });
 
             if (type != null)
             {
-                // Создание экземпляра класса
-                object instance = Activator.CreateInstance(type, new object[] { assemblyName, assemblyNameRus });
+                Activator.CreateInstance(type, new object[] { assemblyName, assemblyNameRus });
             }
         }
     }
