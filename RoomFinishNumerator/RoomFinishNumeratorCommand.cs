@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace RoomFinishNumerator
 {
@@ -20,7 +21,7 @@ namespace RoomFinishNumerator
         {
             try
             {
-                GetPluginStartInfo();
+                _ = GetPluginStartInfo();
             }
             catch { }
 
@@ -689,24 +690,34 @@ namespace RoomFinishNumerator
             roomFinishNumeratorOpeningsProgressBarWPF.Show();
             System.Windows.Threading.Dispatcher.Run();
         }
-
-        private static void GetPluginStartInfo()
+        private static async Task GetPluginStartInfo()
         {
-            var thisAssembly = Assembly.GetExecutingAssembly();
-            var assemblyName = "RoomFinishNumerator";
-            var assemblyNameRus = "Нумератор отделки";
-            var assemblyFolderPath = Path.GetDirectoryName(thisAssembly.Location);
+            // Получаем сборку, в которой выполняется текущий код
+            Assembly thisAssembly = Assembly.GetExecutingAssembly();
+            string assemblyName = "RoomFinishNumerator";
+            string assemblyNameRus = "Нумератор отделки";
+            string assemblyFolderPath = Path.GetDirectoryName(thisAssembly.Location);
 
-            var lastBackslashIndex = assemblyFolderPath.LastIndexOf("\\");
-            var dllPath = assemblyFolderPath.Substring(0, lastBackslashIndex + 1) + "PluginInfoCollector\\PluginInfoCollector.dll";
+            int lastBackslashIndex = assemblyFolderPath.LastIndexOf("\\");
+            string dllPath = assemblyFolderPath.Substring(0, lastBackslashIndex + 1) + "PluginInfoCollector\\PluginInfoCollector.dll";
 
-            var assembly = Assembly.LoadFrom(dllPath);
-            var type = assembly.GetType("PluginInfoCollector.InfoCollector");
-            var constructor = type.GetConstructor(new Type[] { typeof(string), typeof(string) });
+            Assembly assembly = Assembly.LoadFrom(dllPath);
+            Type type = assembly.GetType("PluginInfoCollector.InfoCollector");
 
             if (type != null)
             {
-                Activator.CreateInstance(type, new object[] { assemblyName, assemblyNameRus });
+                // Создание экземпляра класса
+                object instance = Activator.CreateInstance(type);
+
+                // Получение метода CollectPluginUsageAsync
+                var method = type.GetMethod("CollectPluginUsageAsync");
+
+                if (method != null)
+                {
+                    // Вызов асинхронного метода через reflection
+                    Task task = (Task)method.Invoke(instance, new object[] { assemblyName, assemblyNameRus });
+                    await task;  // Ожидание завершения асинхронного метода
+                }
             }
         }
     }
